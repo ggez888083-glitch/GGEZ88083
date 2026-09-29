@@ -1,0 +1,281 @@
+-- [[ Smart ESP V10 - ส่วนที่ 1: ระบบเมนูและกลไกสลับโหมดอัจฉริยะ ]]
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+local TargetParent = CoreGui
+if not pcall(function() return CoreGui.Name end) then
+    TargetParent = LocalPlayer:WaitForChild("PlayerGui")
+end
+
+if TargetParent:FindFirstChild("เมนูSmartESP_V10") then
+    TargetParent["เมนูSmartESP_V10"]:Destroy()
+end
+
+local espActive = false
+local infiniteJumpActive = false
+local selectedMode = "FFA"
+local uiVisible = true
+local toggleKey = Enum.KeyCode.RightControl
+local isBinding = false
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "เมนูSmartESP_V10"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = TargetParent
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 250, 0, 350)
+MainFrame.Position = UDim2.new(0, 30, 0, 30)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 1
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Visible = uiVisible
+MainFrame.Parent = ScreenGui
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.Text = "แผงควบคุมระบบ Smart ESP V10"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 13
+Title.Font = Enum.Font.SourceSansBold
+Title.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+Title.Parent = MainFrame
+
+local function createBtn(text, yPos, color)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 220, 0, 30)
+    btn.Position = UDim2.new(0, 15, 0, yPos)
+    btn.Text = text
+    btn.TextSize = 12
+    btn.Font = Enum.Font.SourceSansBold
+    btn.BackgroundColor3 = color
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Parent = MainFrame
+    return btn
+end
+
+local MasterButton = createBtn("เปิดใช้งานระบบทั้งหมด 🟢", 45, Color3.fromRGB(40, 140, 40))
+local BtnMM2 = createBtn("โหมด: สืบสวน (MM2 มีนายอำเภอ)", 85, Color3.fromRGB(50, 50, 50))
+local BtnSurv = createBtn("โหมด: เอาตัวรอดจาก Villain 👾", 120, Color3.fromRGB(50, 50, 50))
+local BtnTeam = createBtn("โหมด: แบ่งทีมต่อสู้", 155, Color3.fromRGB(50, 50, 50))
+local BtnFFA = createBtn("โหมด: ต่อสู้ทั่วไป/FFA (สแกนพลัง)", 190, Color3.fromRGB(50, 50, 50))
+local JumpButton = createBtn("ฟังก์ชันกระโดดลอยตัว: ปิด ❌", 230, Color3.fromRGB(160, 40, 40))
+local KeybindButton = createBtn("ปุ่มเปิด/ปิดเมนู: RightControl ⌨️", 270, Color3.fromRGB(80, 50, 120))
+
+local StatusLabel = Instance.new("TextLabel")
+StatusLabel.Size = UDim2.new(1, 0, 0, 25)
+StatusLabel.Position = UDim2.new(0, 0, 0, 315)
+StatusLabel.Text = "โหมดปัจจุบัน: ต่อสู้ทั่วไป/FFA ⚔️"
+StatusLabel.TextColor3 = Color3.fromRGB(240, 240, 240)
+StatusLabel.TextSize = 11
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Parent = MainFrame
+
+function updateMenuUI()
+    BtnMM2.BackgroundColor3 = (selectedMode == "MM2") and Color3.fromRGB(200, 80, 80) or Color3.fromRGB(50, 50, 50)
+    BtnSurv.BackgroundColor3 = (selectedMode == "SurvivalNoSheriff") and Color3.fromRGB(220, 50, 50) or Color3.fromRGB(50, 50, 50)
+    BtnTeam.BackgroundColor3 = (selectedMode == "Team") and Color3.fromRGB(50, 100, 200) or Color3.fromRGB(50, 50, 50)
+    BtnFFA.BackgroundColor3 = (selectedMode == "FFA") and Color3.fromRGB(100, 100, 100) or Color3.fromRGB(50, 50, 50)
+    
+    if selectedMode == "MM2" then StatusLabel.Text = "โหมดปัจจุบัน: MM2 (ระบบ Watermelon 100%) 🔪"
+    elseif selectedMode == "SurvivalNoSheriff" then StatusLabel.Text = "โหมดปัจจุบัน: หนีเอาตัวรอดจาก Villain 👾"
+    elseif selectedMode == "Team" then StatusLabel.Text = "โหมดปัจจุบัน: แบ่งทีมต่อสู้ 🛡️"
+    else StatusLabel.Text = "โหมดปัจจุบัน: ต่อสู้ทั่วไป/FFA ⚔️" end
+end
+updateMenuUI()
+-- [[ Smart ESP V10 - ส่วนที่ 2: แกนประมวลผลถอดแบบสคริปต์ต้นฉบับ Watermelon 100% ]]
+function getV10SmartRole(player, targetCharacter)
+    local backpack = player and player:FindFirstChild("Backpack") or nil
+    local charName = string.lower(targetCharacter.Name)
+    local hum = targetCharacter:FindFirstChildOfClass("Humanoid")
+
+    -- [[ ระบบดักจับและสแกนอาวุธเชิงลึก (ถอดแบบกลไกจากสคริปต์ต้นฉบับ Watermelon 100%) ]]
+    local function findWeapons(folder)
+        if not folder then return nil end
+        for _, item in ipairs(folder:GetChildren()) do
+            if item:IsA("Tool") then
+                local nameLower = string.lower(item.Name)
+                if string.find(nameLower, "knife") or string.find(nameLower, "blade") or string.find(nameLower, "slasher") or item:FindFirstChild("KnifeScript") then
+                    return "Murderer"
+                elseif string.find(nameLower, "gun") or string.find(nameLower, "revolver") or string.find(nameLower, "pistol") or item:FindFirstChild("GunScript") then
+                    return "Sheriff"
+                end
+            end
+        end
+        return nil
+    end
+
+    local weaponDetected = findWeapons(backpack) or findWeapons(targetCharacter)
+
+    -- [[ คัดกรองบทบาทและปิดช่องโหว่ตามโหมดที่ผู้ใช้งานกดเลือก ]]
+    if selectedMode == "MM2" then
+        if weaponDetected then return weaponDetected end
+        return "Innocent" -- ล็อกเป็นผู้รอดชีวิต (สีเขียว) เสมอตามระบบสคริปต์ต้นฉบับ Watermelon 100%
+    elseif selectedMode == "SurvivalNoSheriff" then
+        if string.find(charName, "huggy") or string.find(charName, "wuggy") or string.find(charName, "monster") or string.find(charName, "killer") or string.find(charName, "bot") or string.find(charName, "villain") or (hum and hum.MaxHealth > 200) or weaponDetected == "Murderer" then
+            return "Villain"
+        end
+        return "Innocent"
+    elseif selectedMode == "Team" then
+        return "TeamPlayer"
+    else
+        local currentPower = "หมัดเปล่า"
+        if targetCharacter then
+            for _, item in ipairs(targetCharacter:GetChildren()) do
+                if item:IsA("Tool") then currentPower = item.Name break end
+            end
+        end
+        if currentPower == "หมัดเปล่า" and backpack then
+            for _, item in ipairs(backpack:GetChildren()) do
+                if item:IsA("Tool") then currentPower = item.Name break end
+            end
+        end
+        return "RegularPlayer", currentPower
+    end
+end
+
+function removeEntityESP(character)
+    if character:FindFirstChild("REAL_V10_Chams") then character["REAL_V10_Chams"]:Destroy() end
+    local hrp = character:WaitForChild("HumanoidRootPart", 2)
+    if hrp and hrp:FindFirstChild("REAL_V10_Billboard") then hrp["REAL_V10_Billboard"]:Destroy() end
+end
+
+function applyVisualESP(name, character, associatedPlayer)
+    local hrp = character:WaitForChild("HumanoidRootPart", 5)
+    if not hrp then return end
+    if character:FindFirstChild("REAL_V10_Chams") then character["REAL_V10_Chams"]:Destroy() end
+    if hrp:FindFirstChild("REAL_V10_Billboard") then hrp:FindFirstChild("REAL_V10_Billboard"):Destroy() end
+    if not espActive then return end
+    
+    local role, power = getV10SmartRole(associatedPlayer, character)
+    local chamsColor = Color3.fromRGB(240, 240, 240)
+    local roleText = "ผู้เล่นทั่วไป ⚔️"
+    
+    if role == "Murderer" then
+        chamsColor = Color3.fromRGB(255, 50, 50)
+        roleText = "ฆาตกร ❌"
+    elseif role == "Villain" then
+        chamsColor = Color3.fromRGB(255, 50, 50)
+        roleText = "ตัวร้าย (Villain) ❌"
+    elseif role == "Sheriff" then
+        chamsColor = Color3.fromRGB(50, 150, 255)
+        roleText = "นายอำเภอ 🎖️"
+    elseif role == "Innocent" then
+        chamsColor = Color3.fromRGB(50, 255, 50)
+        roleText = "ผู้รอดชีวิต 👤"
+    elseif role == "TeamPlayer" and associatedPlayer then
+        chamsColor = associatedPlayer.TeamColor.Color
+        roleText = "ทีม: " .. (associatedPlayer.Team and associatedPlayer.Team.Name or "ไม่มีทีม")
+    elseif role == "RegularPlayer" then
+        chamsColor = Color3.fromRGB(240, 240, 240)
+        roleText = "ผู้เล่นทั่วไป | พลัง: " .. (power or "ไม่มี")
+    end
+    
+    local highlight = Instance.new("Highlight")
+    highlight.Name = "REAL_V10_Chams"
+    highlight.FillColor = chamsColor
+    highlight.FillTransparency = 0.35
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Parent = character
+    
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "REAL_V10_Billboard"
+    billboard.Size = UDim2.new(0, 220, 0, 60)
+    billboard.AlwaysOnTop = true
+    billboard.ExtentsOffset = Vector3.new(0, 3, 0)
+    billboard.Parent = hrp
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = chamsColor
+    label.TextSize = 11
+    label.Font = Enum.Font.SourceSansBold
+    label.TextStrokeTransparency = 0.5
+    
+    local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local distanceText = ""
+    if myHrp then
+        local distance = math.floor((myHrp.Position - hrp.Position).Magnitude)
+        distanceText = " [" .. tostring(distance) .. "ม.]"
+    end
+    label.Text = name .. distanceText .. "\n" .. "[ " .. roleText .. " ]"
+    label.Parent = billboard
+end
+
+function refreshAllESP()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            applyVisualESP(player.Name, player.Character, player)
+        end
+    end
+    if selectedMode == "SurvivalNoSheriff" then
+        for _, obj in ipairs(Workspace:GetChildren()) do
+            if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") and not Players:GetPlayerFromCharacter(obj) and obj ~= LocalPlayer.Character then
+                applyVisualESP(obj.Name, obj, nil)
+            end
+        end
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if isBinding and input.UserInputType == Enum.UserInputType.Keyboard then
+        toggleKey = input.KeyCode
+        KeybindButton.Text = "ปุ่มเปิด/ปิดเมนู: " .. toggleKey.Name .. " ⌨️"
+        isBinding = false
+        return
+    end
+    if input.KeyCode == toggleKey and not gameProcessed then
+        uiVisible = not uiVisible
+        MainFrame.Visible = uiVisible
+    end
+end)
+
+KeybindButton.MouseButton1Click:Connect(function()
+    isBinding = true
+    KeybindButton.Text = "[ กำลังรอปุ่ม... ]"
+end)
+
+MasterButton.MouseButton1Click:Connect(function()
+    espActive = not espActive
+    MasterButton.Text = espActive and "ปิดใช้งานระบบทั้งหมด 🔴" or "เปิดใช้งานระบบทั้งหมด 🟢"
+    MasterButton.BackgroundColor3 = espActive and Color3.fromRGB(200, 50, 50) or Color3.fromRGB(40, 140, 40)
+    if not espActive then
+        for _, player in ipairs(Players:GetPlayers()) do if player.Character then removeEntityESP(player.Character) end end
+        for _, obj in ipairs(Workspace:GetChildren()) do if obj:IsA("Model") then removeEntityESP(obj) end end
+    else
+        refreshAllESP()
+    end
+end)
+
+BtnMM2.MouseButton1Click:Connect(function() selectedMode = "MM2" updateMenuUI() if espActive then refreshAllESP() end end)
+BtnSurv.MouseButton1Click:Connect(function() selectedMode = "SurvivalNoSheriff" updateMenuUI() if espActive then refreshAllESP() end end)
+BtnTeam.MouseButton1Click:Connect(function() selectedMode = "Team" updateMenuUI() if espActive then refreshAllESP() end end)
+BtnFFA.MouseButton1Click:Connect(function() selectedMode = "FFA" updateMenuUI() if espActive then refreshAllESP() end end)
+
+JumpButton.MouseButton1Click:Connect(function()
+    infiniteJumpActive = not infiniteJumpActive
+    JumpButton.Text = "ฟังก์ชันกระโดดลอยตัว: " .. (infiniteJumpActive and "เปิด 🟢" or "ปิด ❌")
+    JumpButton.BackgroundColor3 = infiniteJumpActive and Color3.fromRGB(40, 140, 40) or Color3.fromRGB(160, 40, 40)
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    if infiniteJumpActive then
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        if humanoid then humanoid:ChangeState(Enum.HumanoidStateType.Jumping) end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        if espActive then refreshAllESP() end
+        task.wait(0.2) -- รีเฟรชความเร็วระดับมิลลิวินาทีตามแบบสคริปต์ต้นฉบับ
+    end
+end)
